@@ -240,6 +240,35 @@
   }
   .product-card .delete-btn:active { background: #FCEBE9; color: var(--primary); }
 
+  .brands-section { padding: 16px 20px 4px; }
+  .brands-title { font-weight: 700; font-size: 14px; margin-bottom: 10px; }
+  .brands-scroll {
+    display: flex;
+    gap: 12px;
+    overflow-x: auto;
+    padding-bottom: 6px;
+  }
+  .brand-card {
+    flex: 0 0 auto;
+    width: 84px;
+    text-align: center;
+  }
+  .brand-card .brand-thumb {
+    width: 72px; height: 72px;
+    border-radius: 16px;
+    background: var(--bg);
+    border: 2px dashed var(--line);
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+    cursor: pointer;
+    margin: 0 auto 6px;
+    position: relative;
+  }
+  .brand-card .brand-thumb.dragover { border-color: var(--primary); background: #FCEBE9; }
+  .brand-card .brand-thumb img { width: 100%; height: 100%; object-fit: contain; }
+  .brand-card .brand-thumb input[type=file] { display: none; }
+  .brand-card .brand-name { font-size: 11px; font-weight: 600; line-height: 1.2; }
+
   .load-more-btn {
     display: block;
     width: 100%;
@@ -349,6 +378,12 @@
     <h1>Nestle.uz boshqaruvi</h1>
     <button onclick="doLogout()">Chiqish</button>
   </header>
+
+  <div class="brands-section">
+    <div class="brands-title">Bolalar ozuqasi — brend belgilari</div>
+    <div class="brands-scroll" id="brandsScroll"></div>
+  </div>
+
   <div class="toolbar">
     <input id="searchInput" type="text" placeholder="Mahsulot qidirish..." oninput="window.SHOW_LIMIT=100;renderList()">
     <div class="stats" id="statsLine"></div>
@@ -436,6 +471,7 @@
       document.getElementById('loginScreen').style.display = 'none';
       document.getElementById('adminScreen').style.display = 'block';
       loadOverrides().then(renderList);
+      loadCategoryIcons().then(renderBrands);
     } else {
       document.getElementById('loginScreen').style.display = 'flex';
       document.getElementById('adminScreen').style.display = 'none';
@@ -457,6 +493,73 @@
       }
     });
   }
+
+  window.CATEGORY_ICONS = {};
+  async function loadCategoryIcons() {
+    const snap = await getDocs(collection(db, 'categories'));
+    snap.forEach(d => {
+      window.CATEGORY_ICONS[d.id] = d.data();
+    });
+  }
+
+  window.renderBrands = function() {
+    const el = document.getElementById('brandsScroll');
+    el.innerHTML = (window.BABY_BRANDS || []).map(b => {
+      const pathJoined = b.path.join('|');
+      const icon = window.CATEGORY_ICONS[pathJoined];
+      const thumbContent = icon && icon.iconImg
+        ? `<img src="${icon.iconImg}" alt="">`
+        : `<span class="icon-hint">🏷</span>`;
+      return `
+        <div class="brand-card">
+          <div class="brand-thumb" id="brand-thumb-${pathJoined}"
+               ondragover="event.preventDefault(); this.classList.add('dragover')"
+               ondragleave="this.classList.remove('dragover')"
+               ondrop="handleBrandDrop(event, '${pathJoined}')"
+               onclick="document.getElementById('brand-file-${pathJoined}').click()">
+            ${thumbContent}
+            <input type="file" id="brand-file-${pathJoined}" accept="image/*" onchange="handleBrandFileSelect(event, '${pathJoined}')">
+          </div>
+          <div class="brand-name">${b.label}</div>
+        </div>`;
+    }).join('');
+  };
+
+  window.uploadCategoryIcon = async function(pathJoined, file) {
+    const thumb = document.getElementById('brand-thumb-' + pathJoined);
+    const formData = new FormData();
+    formData.append('image', file);
+    try {
+      const res = await fetch('https://api.imgur.com/3/image', {
+        method: 'POST',
+        headers: { Authorization: `Client-ID ${IMGUR_CLIENT_ID}` },
+        body: formData,
+      });
+      const data = await res.json();
+      if (data.success && data.data && data.data.link) {
+        const iconUrl = data.data.link;
+        await setDoc(doc(db, 'categories', pathJoined), { iconImg: iconUrl }, { merge: true });
+        window.CATEGORY_ICONS[pathJoined] = { ...(window.CATEGORY_ICONS[pathJoined] || {}), iconImg: iconUrl };
+        thumb.innerHTML = `<img src="${iconUrl}" alt="">`;
+      } else {
+        alert("Belgi yuklashda xatolik: " + (data.data?.error || 'noma\'lum xato'));
+      }
+    } catch (e) {
+      alert("Belgi yuklashda xatolik yuz berdi");
+      console.error(e);
+    }
+  };
+
+  window.handleBrandDrop = function(e, pathJoined) {
+    e.preventDefault();
+    e.currentTarget.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (file) uploadCategoryIcon(pathJoined, file);
+  };
+  window.handleBrandFileSelect = function(e, pathJoined) {
+    const file = e.target.files[0];
+    if (file) uploadCategoryIcon(pathJoined, file);
+  };
 
   window.savePrice = async function(code, price) {
     const statusEl = document.getElementById('status-' + code);
@@ -663,9 +766,11 @@
 
 <script src="categories-tree.js"></script>
 <script src="products-flat.js"></script>
+<script src="baby-brands.js"></script>
 <script>
   window.PRODUCTS_FLAT = PRODUCTS_FLAT;
   window.CATEGORY_PATHS = CATEGORY_PATHS;
+  window.BABY_BRANDS = BABY_BRANDS;
   window.CATEGORY_OPTIONS_HTML = CATEGORY_PATHS.map(c =>
     `<option value="${c.path.join('|')}">${c.label}</option>`
   ).join('');

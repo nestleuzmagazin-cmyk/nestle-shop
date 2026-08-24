@@ -4520,6 +4520,16 @@ render();
     const db = getFirestore(app);
     const snap = await getDocs(collection(db, 'products'));
 
+    const catSnap = await getDocs(collection(db, 'categories'));
+    let categoryIconsUpdated = 0;
+    catSnap.forEach(d => {
+      const data = d.data();
+      if (!data.iconImg) return;
+      const pathArr = d.id.split('|');
+      const target = window.getNode(pathArr);
+      if (target) { target.iconImg = data.iconImg; categoryIconsUpdated++; }
+    });
+
     const toDelete = [];
     const toMove = [];
     const toAdd = [];
@@ -4607,7 +4617,7 @@ render();
       window.CODE_TO_TOP_KEY = newCodeToTop;
     }
 
-    if ((priceNameImageUpdated > 0 || toDelete.length || toMove.length || toAdd.length) && typeof render === 'function') {
+    if ((priceNameImageUpdated > 0 || toDelete.length || toMove.length || toAdd.length || categoryIconsUpdated > 0) && typeof render === 'function') {
       render();
     }
   } catch (e) {
